@@ -1,6 +1,7 @@
 import time
 import random
 import requests
+import sqlite3
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -15,6 +16,7 @@ init(autoreset=True)
 
 client = TelegramClient('bot', config.API_ID, config.API_HASH).start(bot_token=config.BOT_TOKEN)
 
+# روابط دعم إنستغرام
 SUPPORT_URLS = [
     "https://help.instagram.com/contact/606967319425038",
     "https://help.instagram.com/contact/169486816475808",
@@ -24,6 +26,16 @@ SUPPORT_URLS = [
     "https://help.instagram.com/contact/117150254721917",
     "https://help.instagram.com/contact/383679321740945"
 ]
+
+# قاعدة بيانات لتخزين المحاولات
+conn = sqlite3.connect("unban_records.db")
+c = conn.cursor()
+c.execute("""CREATE TABLE IF NOT EXISTS attempts (
+    username TEXT PRIMARY KEY,
+    attempted INTEGER DEFAULT 0,
+    unbanned INTEGER DEFAULT 0
+)""")
+conn.commit()
 
 def setup_driver():
     chrome_options = Options()
@@ -36,7 +48,6 @@ def setup_driver():
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 
-    # ChromeDriver من GitHub Actions
     service = Service("/usr/bin/chromedriver")
     driver = webdriver.Chrome(service=service, options=chrome_options)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
@@ -85,13 +96,19 @@ def send_support_request(driver, url, username):
     except:
         return False
 
-def check_account(username):
+def is_account_exists(username):
+    """تتحقق إذا الحساب موجود فعلاً (محظور أو لا)"""
     url = f"https://www.instagram.com/{username}/"
     try:
         response = requests.get(url)
         return response.status_code == 200
     except:
         return False
+
+def record_attempt(username, unbanned=False):
+    c.execute("INSERT OR REPLACE INTO attempts (username, attempted, unbanned) VALUES (?, COALESCE((SELECT attempted FROM attempts WHERE username=?),0)+1, ?)", 
+              (username, username, 1 if unbanned else 0))
+    conn.commit()
 
 @client.on(events.NewMessage(pattern='/unban'))
 async def unban_handler(event):
@@ -104,10 +121,14 @@ async def unban_handler(event):
         await event.reply("⚠️ استخدم الأمر هكذا:\n`/unban username`")
         return
 
+    if not is_account_exists(username):
+        await client.send_message(config.ADMIN_ID, f"⚠️ الحساب @{username} غير موجود أو محظور أصلاً، لا حاجة لتقديم طلب دعم.")
+        return
+
     driver = setup_driver()
     total_success = 0
 
-    for attempt in range(1,4):
+    for attempt in range(1,4):  # 3 محاولات لكل رابط
         await event.reply(f"⚡ إرسال الجولة {attempt}/3 لكل رابط دعم")
         for url in SUPPORT_URLS:
             result = send_support_request(driver, url, username)
@@ -117,7 +138,10 @@ async def unban_handler(event):
 
     driver.quit()
 
-    if check_account(username):
+    unbanned = is_account_exists(username)
+    record_attempt(username, unbanned=unbanned)
+
+    if unbanned:
         await client.send_message(config.ADMIN_ID, f"✅ تم فك الحظر عن الحساب @{username} بنجاح!")
     else:
         await client.send_message(config.ADMIN_ID, f"⚠️ الحساب @{username} مازال محظور.")
