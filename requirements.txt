@@ -2,4 +2,3 @@ selenium==4.11.2
 telethon==1.30.3
 colorama==0.4.6
 requests==2.31.0
-webdriver-manager==3.9.1
