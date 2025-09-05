@@ -1,5 +1,6 @@
 import time
 import random
+import requests
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -12,18 +13,16 @@ import config
 
 init(autoreset=True)
 
-# بوت التليجرام
 client = TelegramClient('bot', config.API_ID, config.API_HASH).start(bot_token=config.BOT_TOKEN)
 
-# جميع روابط الدعم الرسمية
 SUPPORT_URLS = [
-    "https://help.instagram.com/contact/606967319425038",  # حظر دائم
-    "https://help.instagram.com/contact/169486816475808",  # استئناف حظر مؤقت
-    "https://help.instagram.com/contact/1652567838289083",  # تسجيل دخول
-    "https://help.instagram.com/contact/176481208230029",  # استعادة حساب
-    "https://help.instagram.com/contact/182222309230200",  # ID Verification
-    "https://help.instagram.com/contact/117150254721917",  # تأكيد البريد/الهاتف
-    "https://help.instagram.com/contact/383679321740945"   # مشاكل محتوى الحساب
+    "https://help.instagram.com/contact/606967319425038",
+    "https://help.instagram.com/contact/169486816475808",
+    "https://help.instagram.com/contact/1652567838289083",
+    "https://help.instagram.com/contact/176481208230029",
+    "https://help.instagram.com/contact/182222309230200",
+    "https://help.instagram.com/contact/117150254721917",
+    "https://help.instagram.com/contact/383679321740945"
 ]
 
 def setup_driver():
@@ -42,8 +41,11 @@ def setup_driver():
 
 def get_descriptions():
     return [
+        # عربي
         "حسابي تعرض للحظر عن طريق الخطأ وأرجو مراجعته بشكل يدوي.",
         "أنا أستخدم الحساب بشكل طبيعي، الرجاء إعادة تنشيطه.",
+        "لم أقم بأي نشاط مخالف لشروط الخدمة، أرجو إعادة تفعيل الحساب.",
+        # إنجليزي
         "My account was disabled by mistake, please review manually.",
         "I didn’t violate any terms, please restore my account.",
         "I am a content creator and need my account urgently."
@@ -89,6 +91,17 @@ def send_support_request(driver, url, username):
     except:
         return False
 
+def check_account(username):
+    url = f"https://www.instagram.com/{username}/"
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            return True
+        else:
+            return False
+    except:
+        return False
+
 @client.on(events.NewMessage(pattern='/unban'))
 async def unban_handler(event):
     if event.sender_id != config.ADMIN_ID:
@@ -112,7 +125,11 @@ async def unban_handler(event):
             await event.reply(f"✅ محاولة على: {url}")
 
     driver.quit()
-    await event.reply(f"🎯 تم إرسال {total_success} طلب دعم لـ @{username}")
+
+    if check_account(username):
+        await client.send_message(config.ADMIN_ID, f"✅ تم فك الحظر عن الحساب @{username} بنجاح!")
+    else:
+        await client.send_message(config.ADMIN_ID, f"⚠️ الحساب @{username} مازال محظور.")
 
 print("🚀 البوت شغال الآن ...")
 client.run_until_disconnected()
